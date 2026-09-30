@@ -1,0 +1,64 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Sent by each library's CI when its main branch changes.
+  repository_dispatch:
+    types: [library-updated]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Clone every library of the org
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          mkdir -p libraries
+          gh repo list "$OWNER" --source --no-archived --limit 1000 --json name,isTemplate \
+            --jq '.[] | select(.isTemplate | not) | .name' |
+          while read -r name; do
+            if gh api "repos/$OWNER/$name/contents/fumablox.toml" --silent 2>/dev/null; then
+              git clone --quiet --depth 1 "https://github.com/$OWNER/$name.git" "libraries/$name"
+            fi
+          done
+          ls libraries
+
+      - run: npm ci
+      - run: npm run generate
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
