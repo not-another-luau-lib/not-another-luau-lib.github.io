@@ -9,4 +9,3 @@ export const gitConfig = {
   branch: 'main',
 };
 
-export const docsGitPath = 'content/docs';

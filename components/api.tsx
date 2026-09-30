@@ -18,21 +18,70 @@ const badgeVariants = {
 
 export type BadgeVariant = keyof typeof badgeVariants;
 
-export function ApiType({ type, links = {} }: { type: string; links?: Links }) {
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of type.matchAll(/[A-Za-z_][\w]*/g)) {
-    const href = links[match[0]];
-    if (!href) continue;
-    parts.push(type.slice(last, match.index));
-    parts.push(
-      <a key={match.index} href={href} className="text-fd-primary underline-offset-2 hover:underline">
-        {match[0]}
-      </a>,
-    );
-    last = match.index + match[0].length;
+// Syntax colors for Luau types, in light and dark.
+const colors = {
+  keyword: 'text-pink-600 dark:text-pink-400',
+  primitive: 'text-sky-600 dark:text-sky-400',
+  type: 'text-amber-600 dark:text-amber-300',
+  generic: 'text-violet-600 dark:text-violet-400',
+  field: 'text-orange-600 dark:text-orange-300',
+  string: 'text-emerald-600 dark:text-emerald-400',
+  func: 'font-semibold text-blue-600 dark:text-blue-400',
+  punctuation: 'text-fd-muted-foreground',
+};
+
+const primitives = new Set([
+  'any', 'boolean', 'buffer', 'false', 'never', 'nil', 'number', 'string',
+  'table', 'thread', 'true', 'unknown', 'userdata', 'vector', 'integer',
+]);
+
+// Generic parameters: declared in `<...>`, or single capital letters like `T` and `T...`.
+function genericsOf(type: string) {
+  const names = new Set<string>();
+  for (const [, list] of type.matchAll(/<([^<>]*)>\s*\(/g)) {
+    for (const name of list.split(',')) names.add(name.replace('...', '').trim());
   }
-  parts.push(type.slice(last));
+  return names;
+}
+
+function colorOf(ident: string, next: string, generics: Set<string>) {
+  if (primitives.has(ident)) return colors.primitive;
+  if (ident === 'typeof') return colors.keyword;
+  // `name: Type` inside a table or function type.
+  if (/^\s*\??\s*:(?!:)/.test(next)) return colors.field;
+  if (generics.has(ident) || /^[A-Z]$/.test(ident)) return colors.generic;
+  return colors.type;
+}
+
+export function ApiType({ type, links = {} }: { type: string; links?: Links }) {
+  const generics = genericsOf(type);
+  const parts: ReactNode[] = [];
+  // Strings, `...`, `->`, identifiers, whitespace, then any other single character.
+  for (const match of type.matchAll(/("[^"]*"|'[^']*')|(\.\.\.)|(->)|([A-Za-z_]\w*)|(\s+)|(.)/g)) {
+    const [token, str, dots, arrow, ident, space] = match;
+    const key = match.index;
+    if (space) {
+      parts.push(token);
+    } else if (str) {
+      parts.push(<span key={key} className={colors.string}>{token}</span>);
+    } else if (dots || arrow) {
+      parts.push(<span key={key} className={colors.punctuation}>{arrow ? '→' : token}</span>);
+    } else if (ident) {
+      const className = colorOf(ident, type.slice(key + token.length), generics);
+      const href = links[ident];
+      parts.push(
+        href ? (
+          <a key={key} href={href} className={cn(className, 'underline decoration-dotted underline-offset-2 hover:decoration-solid')}>
+            {token}
+          </a>
+        ) : (
+          <span key={key} className={className}>{token}</span>
+        ),
+      );
+    } else {
+      parts.push(<span key={key} className={colors.punctuation}>{token}</span>);
+    }
+  }
   return <>{parts}</>;
 }
 
@@ -81,9 +130,9 @@ export function Signature({
   if (kind === 'type') {
     return (
       <SignatureBlock>
-        <span className="text-fd-muted-foreground">type </span>
-        <span className="font-semibold text-fd-foreground">{name}</span>
-        <span className="text-fd-muted-foreground"> = </span>
+        <span className={colors.keyword}>type </span>
+        <span className={cn('font-semibold', colors.type)}>{name}</span>
+        <span className={colors.punctuation}> = </span>
         <ApiType type={type} links={links} />
       </SignatureBlock>
     );
@@ -92,9 +141,14 @@ export function Signature({
   if (kind === 'value') {
     return (
       <SignatureBlock>
-        {owner && <span className="text-fd-muted-foreground">{owner}.</span>}
-        <span className="font-semibold text-fd-foreground">{name}</span>
-        <span className="text-fd-muted-foreground">: </span>
+        {owner && (
+          <>
+            <span className={colors.type}>{owner}</span>
+            <span className={colors.punctuation}>.</span>
+          </>
+        )}
+        <span className={cn('font-semibold', colors.field)}>{name}</span>
+        <span className={colors.punctuation}>: </span>
         <ApiType type={type} links={links} />
       </SignatureBlock>
     );
@@ -107,29 +161,29 @@ export function Signature({
   return (
     <SignatureBlock>
       {owner && (
-        <span className="text-fd-muted-foreground">
-          {owner}
-          {separator}
-        </span>
+        <>
+          <span className={colors.type}>{owner}</span>
+          <span className={colors.punctuation}>{separator}</span>
+        </>
       )}
-      <span className="font-semibold text-fd-foreground">{name}</span>
-      <span className="text-fd-muted-foreground">(</span>
+      <span className={colors.func}>{name}</span>
+      <span className={colors.punctuation}>(</span>
       {multiline && '\n'}
       {params.map((param, i) => (
         <Fragment key={param.name + i}>
           {multiline && '    '}
-          <span>{param.name}</span>
+          <span className={colors.field}>{param.name}</span>
           {param.type && (
             <>
-              <span className="text-fd-muted-foreground">: </span>
+              <span className={colors.punctuation}>: </span>
               <ApiType type={param.type} links={links} />
             </>
           )}
-          {i < params.length - 1 && <span className="text-fd-muted-foreground">,{multiline ? '' : ' '}</span>}
+          {i < params.length - 1 && <span className={colors.punctuation}>,{multiline ? '' : ' '}</span>}
           {multiline && '\n'}
         </Fragment>
       ))}
-      <span className="text-fd-muted-foreground">) → </span>
+      <span className={colors.punctuation}>) → </span>
       <ApiType type={ret} links={links} />
     </SignatureBlock>
   );

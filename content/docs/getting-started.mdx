@@ -4,27 +4,21 @@ description: Add a library to your project with ember, pesde or wally.
 icon: Rocket
 ---
 
-Every library is published to three package managers. Package names differ slightly between them
-because each registry has its own naming rules:
+Every library is published to wally, pesde and ember under the same name, `nall/<library>`
+(for example `nall/thread`).
 
-| Registry | Scope                   | Example                             |
-| -------- | ----------------------- | ----------------------------------- |
-| ember    | `not-another-luau-lib`  | `not-another-luau-lib/thread`       |
-| pesde    | `not_another_luau_lib`  | `not_another_luau_lib/thread`       |
-| wally    | `nall`                  | `nall/thread`                       |
-
-The API page of each library shows its exact name and latest version for every registry it is on.
+The API page of each library shows its latest version for every registry it is on.
 
 ## Installing
 
-<Tabs items={['ember', 'pesde', 'wally']}>
+<Tabs items={['wally', 'pesde', 'ember']}>
   <Tab value="ember">
 
 Add the library to `ember.toml`, then install:
 
 ```toml title="ember.toml"
 [dependencies]
-Thread = { name = "not-another-luau-lib/thread", version = "^0.1.0" }
+Thread = { name = "nall/thread", version = "^0.1.0" }
 ```
 
 ```bash
@@ -38,7 +32,7 @@ Add the library to `pesde.toml`, then install:
 
 ```toml title="pesde.toml"
 [dependencies]
-Thread = { name = "not_another_luau_lib/thread", version = "^0.1.0" }
+Thread = { name = "nall/thread", version = "^0.1.0" }
 ```
 
 ```bash

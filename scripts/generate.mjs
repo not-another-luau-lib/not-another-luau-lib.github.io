@@ -115,6 +115,43 @@ async function isOnGitHub(repository) {
   return Boolean(repo && !repo.private && !repo.archived);
 }
 
+// The library's examples/*.luau, at the bottom of its first page. The comment at the top of
+// each file becomes its description; `--!` directives are left out.
+function examples(dir) {
+  const folder = path.join(dir, 'examples');
+  if (!fs.existsSync(folder)) return [];
+  const files = fs
+    .readdirSync(folder)
+    .filter((file) => /\.luau?$/.test(file))
+    .sort();
+  if (files.length === 0) return [];
+
+  return [
+    '## Examples',
+    '',
+    ...files.flatMap((file) => {
+      const lines = fs.readFileSync(path.join(folder, file), 'utf8').split(/\r?\n/);
+      let start = 0;
+      while (start < lines.length && lines[start].startsWith('--!')) start++;
+      const comment = [];
+      while (start < lines.length && /^--(?!\[)/.test(lines[start])) comment.push(lines[start++].replace(/^--\s?/, ''));
+      while (start < lines.length && lines[start].trim() === '') start++;
+      const code = lines.slice(start).join('\n').trimEnd();
+      const description = comment.join(' ').trim().replace(/[{}<]/g, (c) => `\\${c}`);
+
+      return [
+        `### ${file.replace(/\.luau?$/, '')}`,
+        '',
+        ...(description ? [description, ''] : []),
+        `\`\`\`lua title=${JSON.stringify(file)}`,
+        code,
+        '```',
+        '',
+      ];
+    }),
+  ];
+}
+
 // The top of a library's first page: its GitHub repository, then how to install it with each
 // package manager or as a model file from its releases.
 function installIntro(title, repository, packages) {
@@ -132,7 +169,7 @@ function installIntro(title, repository, packages) {
       ],
     ]),
     ...(repoPath(repository)
-      ? [['rbxm', [`Install from the [Releases page](https://github.com/${repoPath(repository)}/releases).`]]]
+      ? [['native', [`Install from the [Releases page](https://github.com/${repoPath(repository)}/releases).`]]]
       : []),
   ];
 
@@ -182,7 +219,7 @@ for (const dir of libraries) {
   const extract = JSON.parse(fs.readFileSync(extractPath, 'utf8'));
   fs.rmSync(extractPath, { force: true });
   const intro = installIntro(title, config.gitRepoUrl, packages);
-  const href = writeApiPages(extract, config, { dir, outRoot, slug, title, intro });
+  const href = writeApiPages(extract, config, { dir, outRoot, slug, title, intro, outro: examples(dir) });
 
   const library = {
     title,

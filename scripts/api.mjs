@@ -139,7 +139,7 @@ const layout = (cls, nested) => ({
 });
 
 function typeSection(cls, ctx, config, h) {
-  const types = cls.types.filter((type) => visible(type) && !ctx.returned.has(type)).sort(byName);
+  const types = cls.types.filter(visible).sort(byName);
   if (types.length === 0) return [];
   return [
     `${h.section} Types`,
@@ -295,7 +295,7 @@ function classBody(cls, ctx, config, nested, after = []) {
   ];
 }
 
-function filePage(title, classes, ctx, config, intro) {
+function filePage(title, classes, ctx, config, intro, outro) {
   const nested = classes.length > 1;
   return [
     '---',
@@ -308,6 +308,7 @@ function filePage(title, classes, ctx, config, intro) {
     // A single class describes the module, so the intro follows its description.
     ...(nested ? intro : []),
     ...classes.flatMap((cls) => classBody(cls, ctx, config, nested, nested ? [] : intro)),
+    ...outro,
   ]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
@@ -466,9 +467,9 @@ function moduleReturns(classes, dir) {
 const LINK_BASE = '@@';
 
 // Writes one page per documented source file of a library under `outRoot` (served at /docs),
-// laid out like its source tree. `intro` goes at the top of its first page. Returns the url of
-// that page.
-export function writeApiPages(extract, config, { dir, outRoot, slug, title, intro = [] }) {
+// laid out like its source tree. `intro` and `outro` go at the top and bottom of its first
+// page. Returns the url of that page.
+export function writeApiPages(extract, config, { dir, outRoot, slug, title, intro = [], outro = [] }) {
   const classes = extract.classes.filter(visible).sort(byName);
   const typeNames = new Map();
   const externals = {};
@@ -519,7 +520,7 @@ export function writeApiPages(extract, config, { dir, outRoot, slug, title, intr
 
   pages.forEach((page, i) => {
     fs.mkdirSync(path.dirname(page.file), { recursive: true });
-    const content = filePage(page.title, byFile.get(page.rel), ctx, config, i === 0 ? intro : []);
+    const content = filePage(page.title, byFile.get(page.rel), ctx, config, i === 0 ? intro : [], i === 0 ? outro : []);
     fs.writeFileSync(page.file, resolve(content));
   });
 
