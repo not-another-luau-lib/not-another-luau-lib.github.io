@@ -11,8 +11,10 @@
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { parse } from 'smol-toml';
+import { writeApiPages } from './api.mjs';
 
 const fumablox = path.resolve(import.meta.dirname, '../node_modules/@metricsrb/fumablox/dist/cli.js');
 const args = process.argv.slice(2);
@@ -113,19 +115,9 @@ async function isOnGitHub(repository) {
   return Boolean(repo && !repo.private && !repo.archived);
 }
 
-// fumablox always links to /docs/api, since it expects to own the whole docs folder.
-function rewriteLinks(dir, slug) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.mdx')) continue;
-    const file = path.join(entry.parentPath, entry.name);
-    const content = fs.readFileSync(file, 'utf8');
-    fs.writeFileSync(file, content.replaceAll('/docs/api/', `/docs/${slug}/`).replaceAll('(/docs/api)', `(/docs/${slug})`));
-  }
-}
-
 const yamlString = (value) => JSON.stringify(value ?? '');
 
-function overviewPage({ title, description, slug, repository, packages }) {
+function overviewPage({ title, description, slug, repository, packages }, classes) {
   const published = Object.keys(packages);
   const alias = title.replace(/[^A-Za-z0-9_]/g, '');
   const lines = [
@@ -173,9 +165,21 @@ function overviewPage({ title, description, slug, repository, packages }) {
     `local ${alias} = require(path.to.${alias})`,
     '```',
     '',
-    `See the [API reference](/docs/${slug}/api) for everything it exposes.`,
-    '',
   );
+
+  if (classes.length > 0) {
+    lines.push(
+      '## API',
+      '',
+      '<Cards>',
+      ...classes.map(
+        (cls) =>
+          `  <Card title=${JSON.stringify(cls.name)} href=${JSON.stringify(`/docs/${slug}/${cls.name}`)} description={${JSON.stringify(cls.description)}} />`,
+      ),
+      '</Cards>',
+      '',
+    );
+  }
 
   if (repository || published.length > 0) {
     lines.push('## Links', '');
@@ -214,15 +218,14 @@ for (const dir of libraries) {
   const out = path.join(outRoot, slug);
   console.log(`> ${title} -> ${path.relative(process.cwd(), out)}`);
   // Run from the library so source links are relative to its repo root.
-  execFileSync(process.execPath, [fumablox, 'generate', '--config', 'fumablox.toml', '--out', out], {
+  const extractPath = path.join(os.tmpdir(), `fumablox-${slug}.json`);
+  execFileSync(process.execPath, [fumablox, 'extract', '--config', 'fumablox.toml', '--out', extractPath], {
     cwd: dir,
     stdio: 'inherit',
   });
-  rewriteLinks(out, slug);
-
-  // fumablox's index becomes the API reference; the library's index is its overview.
-  const apiIndex = path.join(out, 'index.mdx');
-  if (fs.existsSync(apiIndex)) fs.renameSync(apiIndex, path.join(out, 'api.mdx'));
+  const extract = JSON.parse(fs.readFileSync(extractPath, 'utf8'));
+  fs.rmSync(extractPath, { force: true });
+  const classes = writeApiPages(extract, config, out, `/docs/${slug}`);
 
   const library = {
     title,
@@ -231,15 +234,11 @@ for (const dir of libraries) {
     repository: config.gitRepoUrl,
     packages,
   };
-  fs.writeFileSync(path.join(out, 'index.mdx'), overviewPage(library));
-
-  const metaPath = path.join(out, 'meta.json');
-  const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
-  // Overview and API reference first, then the classes, then fumablox's extra pages.
-  const extras = ['graph', 'architecture', 'dependencies', 'changelog'];
-  const pages = (meta.pages ?? []).filter((page) => page !== 'index' && page !== 'api');
-  const ordered = [...pages.filter((page) => !extras.includes(page)), ...pages.filter((page) => extras.includes(page))];
-  fs.writeFileSync(metaPath, JSON.stringify({ ...meta, title, pages: ['index', 'api', ...ordered] }, null, 2) + '\n');
+  fs.writeFileSync(path.join(out, 'index.mdx'), overviewPage(library, classes));
+  fs.writeFileSync(
+    path.join(out, 'meta.json'),
+    JSON.stringify({ title, pages: ['index', '---API---', ...classes.map((cls) => cls.name)] }, null, 2) + '\n',
+  );
 
   list.push(library);
 }

@@ -43,6 +43,20 @@ comments. Only what has a comment is documented:
 ]=]
 ```
 
+Moonwave admonitions (`:::tip`, `:::info`, `:::caution`, `:::warning`, `:::danger`) become callouts,
+and a title can follow the keyword:
+
+```lua
+--[=[
+	:::tip Clean up
+	Disconnect the connection when you are done with it.
+	:::
+]=]
+```
+
+Tags such as `@yields`, `@server`, `@client`, `@deprecated` and `@since` show up as badges next to
+the entry.
+
 Run `npx @metricsrb/fumablox check` in the library to catch missing or broken docs before pushing.
 
 ## Testing
