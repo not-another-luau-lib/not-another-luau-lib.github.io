@@ -11,7 +11,7 @@ export interface Library {
   packages: Partial<Record<Registry, { name: string; version: string; url: string }>>;
 }
 
-// Written by scripts/generate.mjs; only holds libraries published to at least one registry.
+// Written by scripts/generate.mjs; only holds libraries whose repository is public on GitHub.
 export function getLibraries(): Library[] {
   try {
     return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'content/libraries.json'), 'utf8'));

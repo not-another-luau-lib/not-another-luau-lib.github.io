@@ -5,8 +5,9 @@
 //
 // librariesDir holds one folder per library, each with its own fumablox.toml.
 // CI clones every repo of the org into ./libraries; locally, point it at ../libraries.
-// A library is only listed once it is published to ember, pesde or wally; --all lists
-// the unpublished ones too, to preview them locally.
+// A library is listed once its gitRepoUrl is a public GitHub repository; --all lists
+// the others too, to preview them locally. Versions come from ember, pesde and wally.
+// Set GH_TOKEN to avoid GitHub's rate limit.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -47,9 +48,9 @@ const compareVersions = (a, b) => {
 
 const latest = (versions) => versions.filter(Boolean).sort(compareVersions).at(-1);
 
-async function fetchJson(url) {
+async function fetchJson(url, headers = {}) {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
     return response.ok ? await response.json() : undefined;
   } catch (error) {
     console.warn(`! ${url}: ${error.message}`);
@@ -101,6 +102,17 @@ async function findPackages(dir) {
   return packages;
 }
 
+async function isOnGitHub(repository) {
+  const match = repository?.match(/github\.com\/([^/]+)\/([^/.]+)/);
+  if (!match) return false;
+  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  const repo = await fetchJson(
+    `https://api.github.com/repos/${match[1]}/${match[2]}`,
+    token ? { Authorization: `Bearer ${token}` } : {},
+  );
+  return Boolean(repo && !repo.private && !repo.archived);
+}
+
 // fumablox always links to /docs/api, since it expects to own the whole docs folder.
 function rewriteLinks(dir, slug) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
@@ -148,7 +160,10 @@ function overviewPage({ title, description, slug, repository, packages }) {
       '',
     );
   } else {
-    lines.push('<Callout type="warn">This library is not published yet.</Callout>', '');
+    lines.push(
+      '<Callout>This library is not on a package registry yet. Use it from its GitHub repository for now.</Callout>',
+      '',
+    );
   }
 
   lines.push(
@@ -188,12 +203,13 @@ for (const dir of libraries) {
   const config = parse(fs.readFileSync(path.join(dir, 'fumablox.toml'), 'utf8'));
   const title = config.title ?? path.basename(dir);
   const slug = slugify(path.basename(dir));
-  const packages = await findPackages(dir);
 
-  if (Object.keys(packages).length === 0 && !includeUnpublished) {
-    console.log(`- ${title}: not published, skipped`);
+  if (!includeUnpublished && !(await isOnGitHub(config.gitRepoUrl))) {
+    console.log(`- ${title}: ${config.gitRepoUrl ?? 'no gitRepoUrl'} is not a public GitHub repository, skipped`);
     continue;
   }
+
+  const packages = await findPackages(dir);
 
   const out = path.join(outRoot, slug);
   console.log(`> ${title} -> ${path.relative(process.cwd(), out)}`);
@@ -235,5 +251,5 @@ fs.writeFileSync(
 fs.writeFileSync(listPath, JSON.stringify(list, null, 2) + '\n');
 
 if (list.length === 0) {
-  console.warn(`! no published library with a fumablox.toml in ${librariesDir}`);
+  console.warn(`! no library on GitHub with a fumablox.toml in ${librariesDir}`);
 }

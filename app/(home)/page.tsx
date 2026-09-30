@@ -41,7 +41,7 @@ export default function HomePage() {
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Libraries</h2>
             <p className="text-sm text-fd-muted-foreground">
-              {libraries.length} published {libraries.length === 1 ? 'library' : 'libraries'}
+              {libraries.length} {libraries.length === 1 ? 'library' : 'libraries'}
             </p>
           </div>
           <Link
@@ -62,9 +62,9 @@ export default function HomePage() {
         ) : (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-12 text-center">
             <Package className="size-6 text-fd-muted-foreground" />
-            <p className="font-medium">Nothing published yet</p>
+            <p className="font-medium">No library yet</p>
             <p className="max-w-sm text-sm text-fd-muted-foreground">
-              Libraries appear here as soon as they are published to ember, pesde or wally.
+              Libraries appear here as soon as their repository is public on GitHub.
             </p>
           </div>
         )}
@@ -93,7 +93,7 @@ function LibraryCard({ library }: { library: Library }) {
       </div>
       <p className="line-clamp-2 text-sm text-fd-muted-foreground">{library.description}</p>
       <div className="mt-auto flex flex-wrap gap-1.5">
-        {Object.keys(library.packages).map((registry) => (
+        {(Object.keys(library.packages).length > 0 ? Object.keys(library.packages) : ['github']).map((registry) => (
           <span key={registry} className="rounded-md border px-1.5 py-0.5 font-mono text-[11px] text-fd-muted-foreground">
             {registry}
           </span>
