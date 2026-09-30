@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { getHighlighter } from 'fumadocs-core/highlight';
 import { cn } from '@/lib/cn';
 
 // Components for the API pages that scripts/generate.mjs builds from fumablox's extract.
@@ -18,77 +19,67 @@ const badgeVariants = {
 
 export type BadgeVariant = keyof typeof badgeVariants;
 
-// Syntax colors for Luau types, in light and dark.
-const colors = {
-  keyword: 'text-pink-600 dark:text-pink-400',
-  primitive: 'text-sky-600 dark:text-sky-400',
-  type: 'text-amber-600 dark:text-amber-300',
-  generic: 'text-violet-600 dark:text-violet-400',
-  field: 'text-orange-600 dark:text-orange-300',
-  string: 'text-emerald-600 dark:text-emerald-400',
-  func: 'font-semibold text-blue-600 dark:text-blue-400',
-  punctuation: 'text-fd-muted-foreground',
-};
+// Types are colored by Shiki with the same themes as the code blocks, so signatures and code share
+// one palette. Each piece is highlighted inside some Luau around it (`type _ = ...`) to get the
+// colors it has in a type position.
 
-const primitives = new Set([
-  'any', 'boolean', 'buffer', 'false', 'never', 'nil', 'number', 'string',
-  'table', 'thread', 'true', 'unknown', 'userdata', 'vector', 'integer',
-]);
+const themes = { light: 'github-light', dark: 'github-dark' } as const;
+const highlighter = getHighlighter('js', { langs: ['luau'], themes: Object.values(themes) });
 
-// Generic parameters: declared in `<...>`, or single capital letters like `T` and `T...`.
-function genericsOf(type: string) {
-  const names = new Set<string>();
-  for (const [, list] of type.matchAll(/<([^<>]*)>\s*\(/g)) {
-    for (const name of list.split(',')) names.add(name.replace('...', '').trim());
+interface Segment {
+  text: string;
+  light?: string;
+  dark?: string;
+}
+
+// Segments for `body` as Shiki colors it within `prefix + body + suffix`.
+async function luau(prefix: string, body: string, suffix = ''): Promise<Segment[]> {
+  const code = prefix + body + suffix;
+  const { tokens } = (await highlighter).codeToTokens(code, { lang: 'luau', themes });
+  const start = prefix.length;
+  const end = start + body.length;
+  const segments: Segment[] = [];
+  const push = (from: number, to: number, style?: Record<string, string>) => {
+    const a = Math.max(from, start);
+    const b = Math.min(to, end);
+    if (a < b) segments.push({ text: code.slice(a, b), light: style?.color, dark: style?.['--shiki-dark'] });
+  };
+
+  let cursor = 0;
+  for (const token of tokens.flat()) {
+    push(cursor, token.offset); // newlines between lines
+    push(token.offset, token.offset + token.content.length, token.htmlStyle as Record<string, string>);
+    cursor = token.offset + token.content.length;
   }
-  return names;
+  push(cursor, code.length);
+  return segments;
 }
 
-function colorOf(ident: string, next: string, generics: Set<string>) {
-  if (primitives.has(ident)) return colors.primitive;
-  if (ident === 'typeof') return colors.keyword;
-  // `name: Type` inside a table or function type.
-  if (/^\s*\??\s*:(?!:)/.test(next)) return colors.field;
-  if (generics.has(ident) || /^[A-Z]$/.test(ident)) return colors.generic;
-  return colors.type;
+// Renders segments, turning identifiers found in `links` into links of the same color.
+function Colored({ segments, links = {}, className }: { segments: Segment[]; links?: Links; className?: string }) {
+  return segments.map((segment, i) => {
+    const style = { '--l': segment.light, '--d': segment.dark } as CSSProperties;
+    const parts = segment.text.split(/([A-Za-z_]\w*)/).map((part, j) =>
+      links[part] ? (
+        <a key={j} href={links[part]} className="underline decoration-dotted underline-offset-2 hover:decoration-solid">
+          {part}
+        </a>
+      ) : (
+        part
+      ),
+    );
+    return (
+      <span key={i} style={style} className={cn(segment.light && 'text-(--l) dark:text-(--d)', className)}>
+        {parts}
+      </span>
+    );
+  });
 }
 
-export function ApiType({ type, links = {} }: { type: string; links?: Links }) {
-  const generics = genericsOf(type);
-  const parts: ReactNode[] = [];
-  // Strings, `...`, `->`, identifiers, whitespace, then any other single character.
-  for (const match of type.matchAll(/("[^"]*"|'[^']*')|(\.\.\.)|(->)|([A-Za-z_]\w*)|(\s+)|(.)/g)) {
-    const [token, str, dots, arrow, ident, space] = match;
-    const key = match.index;
-    if (space) {
-      parts.push(token);
-    } else if (str) {
-      parts.push(<span key={key} className={colors.string}>{token}</span>);
-    } else if (dots || arrow) {
-      parts.push(<span key={key} className={colors.punctuation}>{arrow ? '→' : token}</span>);
-    } else if (ident) {
-      const className = colorOf(ident, type.slice(key + token.length), generics);
-      const href = links[ident];
-      parts.push(
-        href ? (
-          <a key={key} href={href} className={cn(className, 'underline decoration-dotted underline-offset-2 hover:decoration-solid')}>
-            {token}
-          </a>
-        ) : (
-          <span key={key} className={className}>{token}</span>
-        ),
-      );
-    } else {
-      parts.push(<span key={key} className={colors.punctuation}>{token}</span>);
-    }
-  }
-  return <>{parts}</>;
-}
-
-export function TypeCode({ type, links }: { type: string; links?: Links }) {
+export async function TypeCode({ type, links }: { type: string; links?: Links }) {
   return (
     <code className="rounded-md border bg-fd-muted px-1.5 py-0.5 text-[0.8125rem]">
-      <ApiType type={type} links={links} />
+      <Colored segments={await luau('type _ = ', type)} links={links} />
     </code>
   );
 }
@@ -106,9 +97,14 @@ function SignatureBlock({ children }: { children: ReactNode }) {
   );
 }
 
-// `Owner.name(param: Type, ...) → Return`, broken over lines once it gets long, like Moonwave.
+// A name colored like a type or function name.
+async function Name({ text, bold }: { text: string; bold?: boolean }) {
+  return <Colored segments={await luau('type ', text, ' = nil')} className={bold ? 'font-semibold' : undefined} />;
+}
+
+// `Owner.name(param: Type, ...) -> Return`, broken over lines once it gets long, like Moonwave.
 // kind="type" renders `type Name = Type`, kind="value" renders `Owner.name: Type`.
-export function Signature({
+export async function Signature({
   kind = 'function',
   owner,
   name,
@@ -130,61 +126,37 @@ export function Signature({
   if (kind === 'type') {
     return (
       <SignatureBlock>
-        <span className={colors.keyword}>type </span>
-        <span className={cn('font-semibold', colors.type)}>{name}</span>
-        <span className={colors.punctuation}> = </span>
-        <ApiType type={type} links={links} />
+        <Colored segments={await luau('', `type ${name} = ${type}`)} links={links} />
       </SignatureBlock>
     );
   }
+
+  const prefix = owner ? (
+    <>
+      <Name text={owner} />
+      {separator}
+    </>
+  ) : null;
 
   if (kind === 'value') {
     return (
       <SignatureBlock>
-        {owner && (
-          <>
-            <span className={colors.type}>{owner}</span>
-            <span className={colors.punctuation}>.</span>
-          </>
-        )}
-        <span className={cn('font-semibold', colors.field)}>{name}</span>
-        <span className={colors.punctuation}>: </span>
-        <ApiType type={type} links={links} />
+        {prefix}
+        <Colored segments={await luau('type _ = { ', `${name}: ${type}`, ' }')} links={links} />
       </SignatureBlock>
     );
   }
 
-  const flat = params.map((p) => `${p.name}${p.type ? `: ${p.type}` : ''}`).join(', ');
-  const multiline = flat.length + name.length + (owner?.length ?? 0) > 60 && params.length > 1;
+  const list = params.map((p) => `${p.name}${p.type ? `: ${p.type}` : ''}`);
+  const multiline = list.join(', ').length + name.length + (owner?.length ?? 0) > 60 && params.length > 1;
   const ret = returns.length === 0 ? '()' : returns.length === 1 ? returns[0] : `(${returns.join(', ')})`;
+  const body = multiline ? `(\n    ${list.join(',\n    ')}\n) -> ${ret}` : `(${list.join(', ')}) -> ${ret}`;
 
   return (
     <SignatureBlock>
-      {owner && (
-        <>
-          <span className={colors.type}>{owner}</span>
-          <span className={colors.punctuation}>{separator}</span>
-        </>
-      )}
-      <span className={colors.func}>{name}</span>
-      <span className={colors.punctuation}>(</span>
-      {multiline && '\n'}
-      {params.map((param, i) => (
-        <Fragment key={param.name + i}>
-          {multiline && '    '}
-          <span className={colors.field}>{param.name}</span>
-          {param.type && (
-            <>
-              <span className={colors.punctuation}>: </span>
-              <ApiType type={param.type} links={links} />
-            </>
-          )}
-          {i < params.length - 1 && <span className={colors.punctuation}>,{multiline ? '' : ' '}</span>}
-          {multiline && '\n'}
-        </Fragment>
-      ))}
-      <span className={colors.punctuation}>) → </span>
-      <ApiType type={ret} links={links} />
+      {prefix}
+      <Name text={name} bold />
+      <Colored segments={await luau('type _ = ', body)} links={links} />
     </SignatureBlock>
   );
 }

@@ -115,8 +115,8 @@ async function isOnGitHub(repository) {
   return Boolean(repo && !repo.private && !repo.archived);
 }
 
-// The library's examples/*.luau, at the bottom of its first page. The comment at the top of
-// each file becomes its description; `--!` directives are left out.
+// The library's examples/*.luau, one accordion each at the bottom of its first page. The comment at
+// the top of each file becomes its description; `--!` directives are left out.
 function examples(dir) {
   const folder = path.join(dir, 'examples');
   if (!fs.existsSync(folder)) return [];
@@ -129,6 +129,7 @@ function examples(dir) {
   return [
     '## Examples',
     '',
+    '<Accordions type="multiple">',
     ...files.flatMap((file) => {
       const lines = fs.readFileSync(path.join(folder, file), 'utf8').split(/\r?\n/);
       let start = 0;
@@ -139,16 +140,20 @@ function examples(dir) {
       const code = lines.slice(start).join('\n').trimEnd();
       const description = comment.join(' ').trim().replace(/[{}<]/g, (c) => `\\${c}`);
 
+      const name = file.replace(/\.luau?$/, '');
       return [
-        `### ${file.replace(/\.luau?$/, '')}`,
+        `<Accordion title=${JSON.stringify(name)} id=${JSON.stringify(`example-${name}`)}>`,
         '',
         ...(description ? [description, ''] : []),
         `\`\`\`lua title=${JSON.stringify(file)}`,
         code,
         '```',
         '',
+        '</Accordion>',
       ];
     }),
+    '</Accordions>',
+    '',
   ];
 }
 
