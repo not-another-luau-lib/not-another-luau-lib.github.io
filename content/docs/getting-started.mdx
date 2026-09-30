@@ -1,0 +1,79 @@
+---
+title: Getting Started
+description: Add a library to your project with ember, pesde or wally.
+icon: Rocket
+---
+
+Every library is published to three package managers. Package names differ slightly between them
+because each registry has its own naming rules:
+
+| Registry | Scope                   | Example                             |
+| -------- | ----------------------- | ----------------------------------- |
+| ember    | `not-another-luau-lib`  | `not-another-luau-lib/thread`       |
+| pesde    | `not_another_luau_lib`  | `not_another_luau_lib/thread`       |
+| wally    | `nall`                  | `nall/thread`                       |
+
+The overview page of each library shows its exact name and latest version.
+
+## Installing
+
+<Tabs items={['ember', 'pesde', 'wally']}>
+  <Tab value="ember">
+
+Add the library to `ember.toml`, then install:
+
+```toml title="ember.toml"
+[dependencies]
+Thread = { name = "not-another-luau-lib/thread", version = "^0.1.0" }
+```
+
+```bash
+embr install
+```
+
+  </Tab>
+  <Tab value="pesde">
+
+Add the library to `pesde.toml`, then install:
+
+```toml title="pesde.toml"
+[dependencies]
+Thread = { name = "not_another_luau_lib/thread", version = "^0.1.0" }
+```
+
+```bash
+pesde install
+```
+
+  </Tab>
+  <Tab value="wally">
+
+Add the library to `wally.toml`, then install:
+
+```toml title="wally.toml"
+[dependencies]
+Thread = "nall/thread@^0.1.0"
+```
+
+```bash
+wally install
+```
+
+  </Tab>
+</Tabs>
+
+## Requiring
+
+Once installed, the library lives in your `Packages` folder. Require it like any other module:
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Thread = require(ReplicatedStorage.Packages.Thread)
+```
+
+## Versioning
+
+Libraries follow [semantic versioning](https://semver.org). While a library is below `1.0.0`, a
+minor bump (`0.1.x` to `0.2.0`) may break its API, so depend on `^0.x.y` and read the release
+notes before upgrading.

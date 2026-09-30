@@ -1,25 +1,25 @@
 ---
-title: not-another-luau-lib
+title: Overview
 description: Small, focused Luau libraries for Roblox.
+icon: House
 ---
 
-Every library lives in its own repository and is published to
-[ember](https://luaupm.com), [pesde](https://pesde.dev) and [wally](https://wally.run).
-Pick one from the sidebar to see its API.
+not-another-luau-lib is a collection of small Luau libraries for Roblox. Each one does a single
+thing, has no dependency it does not need, and is fully typed.
 
-## Installing
+- **One repository per library.** Every library is versioned, tested and released on its own,
+  so you only pull in what you use.
+- **Published everywhere.** Libraries are published to [ember](https://luaupm.com),
+  [pesde](https://pesde.dev) and [wally](https://wally.run) under the same version.
+- **Documented from source.** The API reference of each library is generated from its Moonwave
+  comments, so it never drifts from the code.
 
-```toml title="ember.toml"
-[dependencies]
-Thread = { name = "not-another-luau-lib/thread", version = "^0.1.0" }
-```
+## Where to go next
 
-```toml title="pesde.toml"
-[dependencies]
-Thread = { name = "not_another_luau_lib/thread", version = "^0.1.0" }
-```
+<Cards>
+  <Card title="Getting Started" href="/docs/getting-started" description="Add a library to your project with ember, pesde or wally." />
+  <Card title="Contributing" href="/docs/contributing" description="How libraries are laid out, tested and released." />
+</Cards>
 
-```toml title="wally.toml"
-[dependencies]
-Thread = "nall/thread@^0.1.0"
-```
+Every published library is listed in the sidebar under **Libraries**, each with an overview and
+its full API reference.
