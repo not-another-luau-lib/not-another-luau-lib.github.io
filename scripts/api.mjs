@@ -119,7 +119,7 @@ function table(title, rows, ctx) {
     header,
     ...rows.map((row) => {
       const type = row.type ? `<TypeCode type=${attr(row.type)} links=${attr(linksFor(ctx, row.type))} />` : '';
-      const cells = [type, cell(row.description, ctx)];
+      const cells = [type, cell(row.description, ctx) || '—'];
       if (withNames) cells.unshift(`\`${row.name}${row.optional ? '?' : ''}\``);
       return `| ${cells.join(' | ')} |`;
     }),
@@ -139,7 +139,7 @@ const layout = (cls, nested) => ({
 });
 
 function typeSection(cls, ctx, config, h) {
-  const types = cls.types.filter(visible).sort(byName);
+  const types = cls.types.filter((type) => visible(type) && !ctx.returned.has(type)).sort(byName);
   if (types.length === 0) return [];
   return [
     `${h.section} Types`,
@@ -202,73 +202,96 @@ function enumSection(cls, ctx, config, h) {
   ];
 }
 
-function functionSection(cls, ctx, config, h) {
-  const functions = cls.functions.filter(visible);
-  // Static functions first, then methods, like Moonwave.
-  const sorted = [
-    ...functions.filter((fn) => fn.functionKind !== 'method').sort(byName),
-    ...functions.filter((fn) => fn.functionKind === 'method').sort(byName),
-  ];
-  if (sorted.length === 0) return [];
+// Everything below a function's heading: badges, signature, the description's first paragraph,
+// its parameters, return values and errors, then the rest of the description and examples. `callee` is how it is called: `Class.name`, `Class:name`,
+// or just `Class` when requiring the module returns the function itself.
+function functionBody(fn, callee, ctx, config) {
+  const types = [...fn.params.map((p) => p.luaType), ...fn.returns.map((r) => r.luaType)];
+  const extra = fn.yields ? [{ label: 'Yields', variant: 'yields' }] : [];
 
   return [
-    `${h.section} Functions`,
+    ...badgeLine(fn, config, extra),
+    ...deprecation(fn, ctx),
+    `<Signature${callee.owner ? ` owner=${attr(callee.owner)} separator="${callee.separator}"` : ''} name=${attr(callee.name)} params=${attr(
+      fn.params.map((p) => ({ name: p.optional ? `${p.name}?` : p.name, type: p.luaType })),
+    )} returns=${attr(fn.returns.map((r) => r.luaType))} links=${attr(linksFor(ctx, ...types))} />`,
     '',
-    ...sorted.flatMap((fn) => {
-      const separator = fn.functionKind === 'method' ? ':' : '.';
-      const types = [...fn.params.map((p) => p.luaType), ...fn.returns.map((r) => r.luaType)];
-      const extra = [];
-      if (fn.functionKind === 'method') extra.push({ label: 'Method' });
-      if (fn.yields) extra.push({ label: 'Yields', variant: 'yields' });
+    summary(fn.description) ? markdown(fn.description.split(/\n\s*\n/)[0], ctx) : '',
+    '',
+    ...table(
+      'Parameters',
+      fn.params.map((p) => ({ name: p.name, type: p.luaType ?? 'any', description: p.description, optional: p.optional })),
+      ctx,
+    ),
+    ...table('Return values', fn.returns.map((r) => ({ type: r.luaType, description: r.description })), ctx),
+    ...table('Errors', fn.errors.map((e) => ({ type: e.luaType, description: e.description })), ctx),
+    markdown(rest(fn.description), ctx),
+    '',
+    ...fn.examples.flatMap((example) => [
+      `\`\`\`${example.language || 'lua'}${example.title ? ` title=${JSON.stringify(example.title)}` : ''}`,
+      example.code,
+      '```',
+      '',
+    ]),
+  ];
+}
 
+// The function `require` gives back, for a module that returns a function instead of a table.
+// It may be documented as a @function or as a @type; for a type, the parameters and return
+// values come from the function in the source.
+function returnsSection(items, cls, ctx, config, h) {
+  if (items.length === 0) return [];
+  return [
+    `${h.section} Returns [#${h.id('returns')}]`,
+    '',
+    `Requiring this module returns a function: call \`${cls.name}(...)\` directly.`,
+    '',
+    ...items.flatMap((item) => {
+      const signature = ctx.returned.get(item);
+      const fn = item.kind === 'function' ? item : { ...item, yields: false, errors: [], examples: [], ...signature };
+      return functionBody(fn, { name: cls.name }, ctx, config);
+    }),
+  ];
+}
+
+function functionSection(title, fns, cls, ctx, config, h) {
+  if (fns.length === 0) return [];
+  return [
+    `${h.section} ${title}`,
+    '',
+    ...fns.sort(byName).flatMap((fn) => {
+      const separator = fn.functionKind === 'method' ? ':' : '.';
       return [
         `${h.member} ${separator}${fn.name} [#${h.id(fn.name)}]`,
         '',
-        ...badgeLine(fn, config, extra),
-        ...deprecation(fn, ctx),
-        `<Signature owner=${attr(cls.name)} separator="${separator}" name=${attr(fn.name)} params=${attr(
-          fn.params.map((p) => ({ name: p.optional ? `${p.name}?` : p.name, type: p.luaType })),
-        )} returns=${attr(fn.returns.map((r) => r.luaType))} links=${attr(linksFor(ctx, ...types))} />`,
-        '',
-        markdown(fn.description, ctx),
-        '',
-        ...(fn.params.some((p) => p.description)
-          ? table(
-              'Parameters',
-              fn.params.map((p) => ({ name: p.name, type: p.luaType, description: p.description, optional: p.optional })),
-              ctx,
-            )
-          : []),
-        ...(fn.returns.some((r) => r.description)
-          ? table('Returns', fn.returns.map((r) => ({ type: r.luaType, description: r.description })), ctx)
-          : []),
-        ...table('Errors', fn.errors.map((e) => ({ type: e.luaType, description: e.description })), ctx),
-        ...fn.examples.flatMap((example) => [
-          `\`\`\`${example.language || 'lua'}${example.title ? ` title=${JSON.stringify(example.title)}` : ''}`,
-          example.code,
-          '```',
-          '',
-        ]),
+        ...functionBody(fn, { owner: cls.name, separator, name: fn.name }, ctx, config),
       ];
     }),
   ];
 }
 
-function classBody(cls, ctx, config, nested) {
+function classBody(cls, ctx, config, nested, after = []) {
   const h = layout(cls, nested);
   const intro = nested
     ? [`## ${cls.name} [#${cls.name}]`, '', ...badgeLine(cls, config), markdown(cls.description, ctx)]
     : [...badgeLine(cls, config), markdown(rest(cls.description), ctx)];
+  const functions = cls.functions.filter(visible);
+  const returned = [...functions, ...cls.types.filter(visible)].filter((item) => ctx.returned.has(item));
+  const others = functions.filter((fn) => !ctx.returned.has(fn));
+
   return [
     ...intro,
     '',
     ...deprecation(cls, ctx),
+    ...after,
+    ...returnsSection(returned, cls, ctx, config, h),
     ...typeSection(cls, ctx, config, h),
     ...valueSection('Properties', cls.properties, cls, ctx, config, h),
     ...valueSection('Events', cls.events, cls, ctx, config, h),
     ...valueSection('Constants', cls.constants, cls, ctx, config, h),
     ...enumSection(cls, ctx, config, h),
-    ...functionSection(cls, ctx, config, h),
+    ...functionSection('Functions', others.filter((fn) => fn.functionKind !== 'method'), cls, ctx, config, h),
+    ...functionSection('Methods', others.filter((fn) => fn.functionKind === 'method'), cls, ctx, config, h),
   ];
 }
 
@@ -282,8 +305,9 @@ function filePage(title, classes, ctx, config, intro) {
     '',
     '{/* @generated by scripts/generate.mjs from fumablox. Do not edit this file. */}',
     '',
-    ...intro,
-    ...classes.flatMap((cls) => classBody(cls, ctx, config, nested)),
+    // A single class describes the module, so the intro follows its description.
+    ...(nested ? intro : []),
+    ...classes.flatMap((cls) => classBody(cls, ctx, config, nested, nested ? [] : intro)),
   ]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
@@ -366,6 +390,77 @@ function layoutLibrary(root, outRoot, slug, title, pages) {
 const urlOf = (file, outRoot) =>
   ['/docs', ...path.relative(outRoot, file).replace(/\.mdx$/, '').split(path.sep).filter((s) => s !== 'index')].join('/');
 
+// Splits `a, b: (x, y) -> z` on the commas that are not nested in brackets. The `>` of `->`
+// is not a closing bracket.
+function splitTopLevel(text) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if ('([{<'.includes(c)) depth++;
+    else if (')]}'.includes(c) || (c === '>' && text[i - 1] !== '-')) depth--;
+    else if (c === ',' && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+// Parameters and return values of a one-line function definition such as
+// `return function<T...>(callback: (T...) -> (), ...: T...): thread`.
+function parseSignature(line) {
+  const open = line.match(/function\s*[\w.:]*\s*(?:<[^()]*>)?\s*\(/);
+  if (!open) return undefined;
+  let depth = 0;
+  let close = open.index + open[0].length;
+  for (; close < line.length; close++) {
+    const c = line[close];
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) {
+      if (depth === 0) break;
+      depth--;
+    }
+  }
+  const params = splitTopLevel(line.slice(open.index + open[0].length, close)).map((param) => {
+    const colon = param.indexOf(':');
+    return colon === -1
+      ? { name: param, description: '' }
+      : { name: param.slice(0, colon).trim(), luaType: param.slice(colon + 1).trim(), description: '' };
+  });
+  const ret = line.slice(close + 1).match(/^\s*:\s*(.+?)\s*(?:--.*)?$/)?.[1];
+  return { params, returns: ret ? [{ luaType: ret, description: '' }] : [] };
+}
+
+// Doc entries (functions or types) that describe the module's return value: their comment is
+// followed by `return function(...)`, or by `local function name` with the file ending in
+// `return name`. Maps each one to the signature read from that function.
+function moduleReturns(classes, dir) {
+  const returned = new Map();
+  const files = new Map();
+  const lines = (file) => {
+    if (!files.has(file)) {
+      const full = path.join(dir ?? '', file);
+      files.set(file, dir && fs.existsSync(full) ? fs.readFileSync(full, 'utf8').split(/\r?\n/) : []);
+    }
+    return files.get(file);
+  };
+  for (const cls of classes) {
+    for (const item of [...cls.functions, ...cls.types]) {
+      const source = lines(item.source.path);
+      const next = source.slice(item.source.endLine).find((line) => line.trim() !== '')?.trim() ?? '';
+      const last = source.findLast((line) => line.trim() !== '')?.trim() ?? '';
+      const local = next.match(/^(?:local\s+)?function\s+([A-Za-z_]\w*)\s*[<(]/);
+      if (/^return\s+function\b/.test(next) || (local && last === `return ${local[1]}`)) {
+        returned.set(item, parseSignature(next) ?? { params: [], returns: [] });
+      }
+    }
+  }
+  return returned;
+}
+
 // Placeholder base url for fumablox's resolver: links come back as `@@/Class#member` and are
 // pointed at the page of the file declaring the class once every page is laid out.
 const LINK_BASE = '@@';
@@ -373,7 +468,7 @@ const LINK_BASE = '@@';
 // Writes one page per documented source file of a library under `outRoot` (served at /docs),
 // laid out like its source tree. `intro` goes at the top of its first page. Returns the url of
 // that page.
-export function writeApiPages(extract, config, { outRoot, slug, title, intro = [] }) {
+export function writeApiPages(extract, config, { dir, outRoot, slug, title, intro = [] }) {
   const classes = extract.classes.filter(visible).sort(byName);
   const typeNames = new Map();
   const externals = {};
@@ -390,6 +485,7 @@ export function writeApiPages(extract, config, { outRoot, slug, title, intro = [
     externals,
     baseUrl: LINK_BASE,
     robloxLinks: config.robloxLinks ?? true,
+    returned: moduleReturns(classes, dir),
   };
 
   // Classes grouped by source file, relative to the code folder they live in.

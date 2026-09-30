@@ -60,28 +60,11 @@ async function fetchJson(url, headers = {}) {
   }
 }
 
-// Each registry: where the package name lives in the library, and how to find its latest version.
+// Each registry: the package as the library's manifest declares it, and how to find the latest
+// version published.
 const registries = {
-  ember: {
-    name: (dir) => readToml(path.join(dir, 'ember.toml'))?.package?.name,
-    version: async (name) => {
-      const data = await fetchJson(`https://api.luaupm.com/v1/packages/${name}`);
-      return latest(Object.values(data?.versions ?? {}).map((v) => v.version));
-    },
-    url: (name) => `https://luaupm.com/package?name=${encodeURIComponent(name)}`,
-    dependency: (alias, name, version) => `${alias} = { name = "${name}", version = "^${version}" }`,
-  },
-  pesde: {
-    name: (dir) => readToml(path.join(dir, 'pesde.toml'))?.name,
-    version: async (name) => {
-      const data = await fetchJson(`https://registry.pesde.dev/v1/packages/${encodeURIComponent(name)}`);
-      return latest(Object.keys(data?.versions ?? {}));
-    },
-    url: (name) => `https://pesde.dev/packages/${name}`,
-    dependency: (alias, name, version) => `${alias} = { name = "${name}", version = "^${version}" }`,
-  },
   wally: {
-    name: (dir) => readToml(path.join(dir, 'wally.toml'))?.package?.name,
+    manifest: (dir) => readToml(path.join(dir, 'wally.toml'))?.package,
     version: async (name) => {
       const data = await fetchJson(`https://api.wally.run/v1/package-metadata/${name}`);
       return latest((data?.versions ?? []).map((v) => v.package?.version));
@@ -89,55 +72,82 @@ const registries = {
     url: (name) => `https://wally.run/package/${name}`,
     dependency: (alias, name, version) => `${alias} = "${name}@^${version}"`,
   },
+  pesde: {
+    manifest: (dir) => readToml(path.join(dir, 'pesde.toml')),
+    version: async (name) => {
+      const data = await fetchJson(`https://registry.pesde.dev/v1/packages/${encodeURIComponent(name)}`);
+      return latest(Object.keys(data?.versions ?? {}));
+    },
+    url: (name) => `https://pesde.dev/packages/${name}`,
+    dependency: (alias, name, version) => `${alias} = { name = "${name}", version = "^${version}" }`,
+  },
+  ember: {
+    manifest: (dir) => readToml(path.join(dir, 'ember.toml'))?.package,
+    version: async (name) => {
+      const data = await fetchJson(`https://api.luaupm.com/v1/packages/${name}`);
+      return latest(Object.values(data?.versions ?? {}).map((v) => v.version));
+    },
+    url: (name) => `https://luaupm.com/package?name=${encodeURIComponent(name)}`,
+    dependency: (alias, name, version) => `${alias} = { name = "${name}", version = "^${version}" }`,
+  },
 };
 
+// Every registry the library has a manifest for, with the latest published version when there
+// is one (`published`) and the manifest's version otherwise.
 async function findPackages(dir) {
   const packages = {};
-  await Promise.all(
-    Object.entries(registries).map(async ([registry, { name: readName, version, url }]) => {
-      const name = readName(dir);
-      if (!name) return;
-      const published = await version(name);
-      if (published) packages[registry] = { name, version: published, url: url(name) };
-    }),
-  );
+  for (const [registry, { manifest, version, url }] of Object.entries(registries)) {
+    const { name, version: declared } = manifest(dir) ?? {};
+    if (!name) continue;
+    const published = await version(name);
+    packages[registry] = { name, version: published ?? declared, published: Boolean(published), url: url(name) };
+  }
   return packages;
 }
 
+const githubToken = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+const githubApi = (route) =>
+  fetchJson(`https://api.github.com/${route}`, githubToken ? { Authorization: `Bearer ${githubToken}` } : {});
+const repoPath = (repository) => repository?.match(/github\.com\/([^/]+\/[^/.]+)/)?.[1];
+
 async function isOnGitHub(repository) {
-  const match = repository?.match(/github\.com\/([^/]+)\/([^/.]+)/);
-  if (!match) return false;
-  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
-  const repo = await fetchJson(
-    `https://api.github.com/repos/${match[1]}/${match[2]}`,
-    token ? { Authorization: `Bearer ${token}` } : {},
-  );
+  const repo = repoPath(repository) && (await githubApi(`repos/${repoPath(repository)}`));
   return Boolean(repo && !repo.private && !repo.archived);
 }
 
-// Install instructions for the registries the library is published to, shown at the top of its
-// first API page.
-function installIntro(title, packages) {
-  const published = Object.keys(packages);
-  if (published.length === 0) return [];
+// The top of a library's first page: its GitHub repository, then how to install it with each
+// package manager or as a model file from its releases.
+function installIntro(title, repository, packages) {
   const alias = title.replace(/[^A-Za-z0-9_]/g, '');
-  return [
-    `<Tabs items={${JSON.stringify(published)}}>`,
-    ...published.flatMap((registry) => {
-      const { name, version } = packages[registry];
-      return [
-        `  <Tab value="${registry}">`,
-        '',
+  const tabs = [
+    ...Object.entries(packages).map(([registry, { name, version, published, url }]) => [
+      registry,
+      [
         `\`\`\`toml title="${registry}.toml"`,
         '[dependencies]',
         registries[registry].dependency(alias, name, version),
         '```',
         '',
-        '  </Tab>',
-      ];
-    }),
-    '</Tabs>',
+        published ? `[\`${name}@${version}\` on ${registry}](${url})` : `Not published to ${registry} yet.`,
+      ],
+    ]),
+    ...(repoPath(repository)
+      ? [['rbxm', [`Install from the [Releases page](https://github.com/${repoPath(repository)}/releases).`]]]
+      : []),
+  ];
+
+  return [
+    '## Installation',
     '',
+    ...(repository ? [`<RepoLink href=${JSON.stringify(repository)} />`, ''] : []),
+    ...(tabs.length > 0
+      ? [
+          `<Tabs items={${JSON.stringify(tabs.map(([name]) => name))}}>`,
+          ...tabs.flatMap(([name, body]) => [`  <Tab value="${name}">`, '', ...body, '', '  </Tab>']),
+          '</Tabs>',
+          '',
+        ]
+      : []),
   ];
 }
 
@@ -171,7 +181,8 @@ for (const dir of libraries) {
   });
   const extract = JSON.parse(fs.readFileSync(extractPath, 'utf8'));
   fs.rmSync(extractPath, { force: true });
-  const href = writeApiPages(extract, config, { outRoot, slug, title, intro: installIntro(title, packages) });
+  const intro = installIntro(title, config.gitRepoUrl, packages);
+  const href = writeApiPages(extract, config, { dir, outRoot, slug, title, intro });
 
   const library = {
     title,
