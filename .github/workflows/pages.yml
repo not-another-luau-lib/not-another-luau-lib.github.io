@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Publishing to a registry does not push anything, so check for new releases regularly.
+  schedule:
+    - cron: "0 */6 * * *"
   # Sent by each library's CI when its main branch changes.
   repository_dispatch:
     types: [library-updated]

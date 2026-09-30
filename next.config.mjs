@@ -7,6 +7,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const config = {
   output: 'export',
   reactStrictMode: true,
+  agentRules: false,
   images: { unoptimized: true },
   trailingSlash: true,
   env: {
