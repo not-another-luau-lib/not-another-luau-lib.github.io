@@ -162,8 +162,7 @@ for (const dir of libraries) {
 
   const packages = await findPackages(dir);
 
-  const out = path.join(outRoot, slug);
-  console.log(`> ${title} -> ${path.relative(process.cwd(), out)}`);
+  console.log(`> ${title}`);
   // Run from the library so source links are relative to its repo root.
   const extractPath = path.join(os.tmpdir(), `fumablox-${slug}.json`);
   execFileSync(process.execPath, [fumablox, 'extract', '--config', 'fumablox.toml', '--out', extractPath], {
@@ -172,8 +171,7 @@ for (const dir of libraries) {
   });
   const extract = JSON.parse(fs.readFileSync(extractPath, 'utf8'));
   fs.rmSync(extractPath, { force: true });
-  const { entries, href } = writeApiPages(extract, config, out, `/docs/${slug}`, installIntro(title, packages));
-  fs.writeFileSync(path.join(out, 'meta.json'), JSON.stringify({ title, pages: entries }, null, 2) + '\n');
+  const href = writeApiPages(extract, config, { outRoot, slug, title, intro: installIntro(title, packages) });
 
   const library = {
     title,

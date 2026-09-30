@@ -311,55 +311,69 @@ function buildTree(paths) {
   return root;
 }
 
+const isLeaf = (node) => node.files.size + node.dirs.size === 0;
+
 function writeMeta(dir, meta) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
 }
 
-// Lays a tree node out as Fumadocs pages and folders inside `dir`, writing each folder's
-// meta.json. A folder's index.mdx is its own module, so clicking the folder opens it.
-// Collects every page as { rel, file, title } and returns the parent's entries.
+// Lays the modules of a tree node out inside `dir`, each named like its Rojo instance. A
+// folder module with children becomes a Fumadocs folder whose index.mdx is the module itself,
+// so clicking the folder opens it; one without children is a plain page. Collects every page
+// as { rel, file, title } and returns the entries for the parent's meta.json.
 function layoutChildren(node, dir, pages) {
   const entries = [];
   for (const [name, rel] of [...node.files].sort(byKey)) {
-    pages.push({ rel, file: path.join(dir, `${stem(name)}.mdx`), title: name });
+    pages.push({ rel, file: path.join(dir, `${stem(name)}.mdx`), title: stem(name) });
     entries.push(stem(name));
   }
   for (const [name, child] of [...node.dirs].sort(byKey)) {
-    const into = path.join(dir, name);
-    if (child.init) pages.push({ rel: child.init, file: path.join(into, 'index.mdx'), title: name });
-    const children = layoutChildren(child, into, pages);
-    writeMeta(into, { title: name, pages: children });
+    if (child.init && isLeaf(child)) {
+      pages.push({ rel: child.init, file: path.join(dir, `${name}.mdx`), title: name });
+    } else {
+      const into = path.join(dir, name);
+      if (child.init) pages.push({ rel: child.init, file: path.join(into, 'index.mdx'), title: name });
+      writeMeta(into, { title: name, pages: layoutChildren(child, into, pages) });
+    }
     entries.push(name);
   }
   return entries;
 }
 
-// The library root: its init.luau comes first and everything else nests under it.
-function layoutRoot(root, out, pages) {
-  if (!root.init) return layoutChildren(root, out, pages);
-  const title = path.basename(root.init);
-  if (root.files.size + root.dirs.size === 0) {
-    pages.push({ rel: root.init, file: path.join(out, 'init.mdx'), title });
-    return ['init'];
+// The library itself: a single module is one page named after the library. Otherwise it is a
+// folder listing its modules, with the root init.luau first under the library's name.
+function layoutLibrary(root, outRoot, slug, title, pages) {
+  if (root.init && isLeaf(root)) {
+    pages.push({ rel: root.init, file: path.join(outRoot, `${slug}.mdx`), title });
+    return;
   }
-  const into = path.join(out, 'init');
-  pages.push({ rel: root.init, file: path.join(into, 'index.mdx'), title });
-  writeMeta(into, { title, pages: layoutChildren(root, into, pages), defaultOpen: true });
-  return ['init'];
+  if (!root.init && root.dirs.size === 0 && root.files.size === 1) {
+    const [rel] = root.files.values();
+    pages.push({ rel, file: path.join(outRoot, `${slug}.mdx`), title });
+    return;
+  }
+
+  const dir = path.join(outRoot, slug);
+  const entries = [];
+  if (root.init) {
+    pages.push({ rel: root.init, file: path.join(dir, 'index.mdx'), title });
+    entries.push('index');
+  }
+  writeMeta(dir, { title, pages: [...entries, ...layoutChildren(root, dir, pages)] });
 }
 
-const urlOf = (file, out, baseUrl) =>
-  [baseUrl, ...path.relative(out, file).replace(/\.mdx$/, '').split(path.sep).filter((s) => s !== 'index')].join('/');
+const urlOf = (file, outRoot) =>
+  ['/docs', ...path.relative(outRoot, file).replace(/\.mdx$/, '').split(path.sep).filter((s) => s !== 'index')].join('/');
 
 // Placeholder base url for fumablox's resolver: links come back as `@@/Class#member` and are
 // pointed at the page of the file declaring the class once every page is laid out.
 const LINK_BASE = '@@';
 
-// Writes one page per documented source file into `out`, laid out like the source tree.
-// `intro` goes at the top of the first page. Returns the entries of the library's
-// meta.json and the url of its first page.
-export function writeApiPages(extract, config, out, baseUrl, intro = []) {
+// Writes one page per documented source file of a library under `outRoot` (served at /docs),
+// laid out like its source tree. `intro` goes at the top of its first page. Returns the url of
+// that page.
+export function writeApiPages(extract, config, { outRoot, slug, title, intro = [] }) {
   const classes = extract.classes.filter(visible).sort(byName);
   const typeNames = new Map();
   const externals = {};
@@ -389,15 +403,14 @@ export function writeApiPages(extract, config, out, baseUrl, intro = []) {
     byFile.get(rel).push(cls);
   }
 
-  fs.mkdirSync(out, { recursive: true });
   const pages = [];
-  const entries = layoutRoot(buildTree([...byFile.keys()]), out, pages);
+  layoutLibrary(buildTree([...byFile.keys()]), outRoot, slug, title, pages);
 
   const targets = new Map();
   for (const page of pages) {
     const pageClasses = byFile.get(page.rel);
     for (const cls of pageClasses) {
-      targets.set(cls.name, { url: urlOf(page.file, out, baseUrl), nested: pageClasses.length > 1 });
+      targets.set(cls.name, { url: urlOf(page.file, outRoot), nested: pageClasses.length > 1 });
     }
   }
   const resolve = (text) =>
@@ -414,5 +427,5 @@ export function writeApiPages(extract, config, out, baseUrl, intro = []) {
     fs.writeFileSync(page.file, resolve(content));
   });
 
-  return { entries, href: pages[0] ? urlOf(pages[0].file, out, baseUrl) : baseUrl };
+  return pages[0] ? urlOf(pages[0].file, outRoot) : `/docs/${slug}`;
 }
