@@ -5,8 +5,11 @@ import {
   DocsPage,
   DocsTitle,
   MarkdownCopyButton,
+  PageLastUpdate,
   ViewOptionsPopover,
 } from 'fumadocs-ui/layouts/docs/page';
+import { buttonVariants } from 'fumadocs-ui/components/ui/button';
+import { GitHubIcon } from '@/components/api';
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
@@ -19,14 +22,30 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
 
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
+  // Library pages link to their repository and show when their source last changed instead of
+  // the previous/next page.
+  const { repository, lastModified } = page.data;
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full}>
+    <DocsPage toc={page.data.toc} full={page.data.full} footer={{ enabled: !repository }}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
       <div className="flex flex-row gap-2 items-center border-b pb-6">
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover markdownUrl={markdownUrl} />
+        {repository && (
+          <a
+            href={repository}
+            className={buttonVariants({
+              color: 'secondary',
+              size: 'sm',
+              className: 'gap-2 [&_svg]:size-3.5 [&_svg]:text-fd-muted-foreground',
+            })}
+          >
+            <GitHubIcon />
+            View on GitHub
+          </a>
+        )}
       </div>
       <DocsBody>
         <MDX
@@ -36,6 +55,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
           })}
         />
       </DocsBody>
+      {lastModified && <PageLastUpdate date={new Date(lastModified)} />}
     </DocsPage>
   );
 }

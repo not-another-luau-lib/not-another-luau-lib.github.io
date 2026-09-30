@@ -115,6 +115,27 @@ async function isOnGitHub(repository) {
   return Boolean(repo && !repo.private && !repo.archived);
 }
 
+// When each source file last changed: its latest commit on GitHub, or in the local clone when
+// the API has nothing (a shallow clone only knows its last commit).
+async function lastModified(repository, dir, files) {
+  const dates = new Map();
+  for (const file of files) {
+    const commits = repoPath(repository)
+      ? await githubApi(`repos/${repoPath(repository)}/commits?path=${encodeURIComponent(file)}&per_page=1`)
+      : undefined;
+    let date = Array.isArray(commits) ? commits[0]?.commit?.committer?.date : undefined;
+    if (!date) {
+      try {
+        date = execFileSync('git', ['log', '-1', '--format=%cI', '--', file], { cwd: dir, encoding: 'utf8' }).trim();
+      } catch {
+        // Not a git checkout.
+      }
+    }
+    if (date) dates.set(file, date);
+  }
+  return dates;
+}
+
 // The library's examples/*.luau, one accordion each at the bottom of its first page. The comment at
 // the top of each file becomes its description; `--!` directives are left out.
 function examples(dir) {
@@ -157,8 +178,8 @@ function examples(dir) {
   ];
 }
 
-// The top of a library's first page: its GitHub repository, then how to install it with each
-// package manager or as a model file from its releases.
+// The top of a library's first page: how to install it with each package manager or as a model
+// file from its releases.
 function installIntro(title, repository, packages) {
   const alias = title.replace(/[^A-Za-z0-9_]/g, '');
   const tabs = [
@@ -181,7 +202,6 @@ function installIntro(title, repository, packages) {
   return [
     '## Installation',
     '',
-    ...(repository ? [`<RepoLink href=${JSON.stringify(repository)} />`, ''] : []),
     ...(tabs.length > 0
       ? [
           `<Tabs items={${JSON.stringify(tabs.map(([name]) => name))}}>`,
@@ -224,7 +244,17 @@ for (const dir of libraries) {
   const extract = JSON.parse(fs.readFileSync(extractPath, 'utf8'));
   fs.rmSync(extractPath, { force: true });
   const intro = installIntro(title, config.gitRepoUrl, packages);
-  const href = writeApiPages(extract, config, { dir, outRoot, slug, title, intro, outro: examples(dir) });
+  const sources = [...new Set(extract.classes.map((cls) => cls.source.path.replaceAll('\\', '/')))];
+  const href = writeApiPages(extract, config, {
+    dir,
+    outRoot,
+    slug,
+    title,
+    intro,
+    outro: examples(dir),
+    repository: config.gitRepoUrl,
+    lastModified: await lastModified(config.gitRepoUrl, dir, sources),
+  });
 
   const library = {
     title,

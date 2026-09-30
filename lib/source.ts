@@ -3,11 +3,17 @@ import { lucideIconsPlugin } from 'fumadocs-core/source/lucide-icons';
 import { docsContentRoute, docsImageRoute, docsRoute } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
+import { z } from 'zod';
 
 const docs = defineDocs({
   dir: 'content/docs',
   docs: {
-    schema: pageSchema,
+    // Library pages, written by scripts/generate.mjs, also carry their repository and the date
+    // their source file last changed.
+    schema: pageSchema.extend({
+      repository: z.string().optional(),
+      lastModified: z.string().optional(),
+    }),
     postprocess: {
       includeProcessedMarkdown: true,
     },
