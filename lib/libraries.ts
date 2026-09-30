@@ -6,6 +6,7 @@ export type Registry = 'ember' | 'pesde' | 'wally';
 export interface Library {
   title: string;
   slug: string;
+  href: string;
   description: string;
   repository?: string;
   packages: Partial<Record<Registry, { name: string; version: string; url: string }>>;

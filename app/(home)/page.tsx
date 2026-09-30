@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Package } from 'lucide-react';
+import { ArrowRight, Package } from 'lucide-react';
 import { getLibraries, type Library } from '@/lib/libraries';
 import { gitConfig } from '@/lib/shared';
 
@@ -9,9 +9,6 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-16 px-4 py-16 md:px-6 md:py-24">
       <section className="flex flex-col items-start gap-6">
-        <span className="rounded-full border px-3 py-1 text-xs text-fd-muted-foreground">
-          ember · pesde · wally
-        </span>
         <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
           not-another-<span className="text-fd-primary">luau</span>-lib
         </h1>
@@ -37,20 +34,11 @@ export default function HomePage() {
       </section>
 
       <section className="flex flex-col gap-6">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Libraries</h2>
-            <p className="text-sm text-fd-muted-foreground">
-              {libraries.length} {libraries.length === 1 ? 'library' : 'libraries'}
-            </p>
-          </div>
-          <Link
-            href="/docs"
-            className="inline-flex items-center gap-1.5 text-sm text-fd-muted-foreground transition-colors hover:text-fd-foreground"
-          >
-            <BookOpen className="size-4" />
-            Docs
-          </Link>
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Libraries</h2>
+          <p className="text-sm text-fd-muted-foreground">
+            {libraries.length} {libraries.length === 1 ? 'library' : 'libraries'}
+          </p>
         </div>
 
         {libraries.length > 0 ? (
@@ -78,7 +66,7 @@ function LibraryCard({ library }: { library: Library }) {
 
   return (
     <Link
-      href={`/docs/${library.slug}`}
+      href={library.href}
       className="group flex flex-col gap-3 rounded-xl border bg-fd-card p-5 transition-colors hover:border-fd-primary/50 hover:bg-fd-accent/50"
     >
       <div className="flex items-center gap-3">
@@ -92,13 +80,6 @@ function LibraryCard({ library }: { library: Library }) {
         <ArrowRight className="size-4 shrink-0 text-fd-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-fd-primary" />
       </div>
       <p className="line-clamp-2 text-sm text-fd-muted-foreground">{library.description}</p>
-      <div className="mt-auto flex flex-wrap gap-1.5">
-        {(Object.keys(library.packages).length > 0 ? Object.keys(library.packages) : ['github']).map((registry) => (
-          <span key={registry} className="rounded-md border px-1.5 py-0.5 font-mono text-[11px] text-fd-muted-foreground">
-            {registry}
-          </span>
-        ))}
-      </div>
     </Link>
   );
 }

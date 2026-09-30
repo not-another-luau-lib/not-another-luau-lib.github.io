@@ -7,13 +7,6 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: <Logo />,
     },
-    githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
-    links: [
-      {
-        text: 'Docs',
-        url: '/docs',
-        active: 'nested-url',
-      },
-    ],
+    githubUrl: `https://github.com/${gitConfig.user}`,
   };
 }
